@@ -1,0 +1,10 @@
+services:
+  sayhi-image-tool:
+    build: .
+    container_name: sayhi-image-tool
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+

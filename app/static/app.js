@@ -18,10 +18,12 @@ const progressCount = document.querySelector("#progressCount");
 const progressBar = document.querySelector("#progressBar");
 const previewGrid = document.querySelector("#previewGrid");
 const downloadLink = document.querySelector("#downloadLink");
+const processModeInputs = Array.from(document.querySelectorAll('input[name="processMode"]'));
 
 let selectedProductFiles = [];
 let generatedPreviews = [];
 const PROCESS_CONCURRENCY = 3;
+const PRODUCT_AREA_RATIO = 0.75;
 const CRC_TABLE = buildCrcTable();
 
 function setStatus(message) {
@@ -203,6 +205,99 @@ function buildSingleProcessFormData(file, index, width, height) {
   return formData;
 }
 
+function getProcessMode() {
+  return processModeInputs.find((input) => input.checked)?.value || "local";
+}
+
+function safeStem(value, fallback = "product") {
+  return String(value || fallback)
+    .replace(/\.[^.]+$/i, "")
+    .trim()
+    .replace(/[^\w.-]+/g, "_")
+    .replace(/^[._-]+|[._-]+$/g, "")
+    .slice(0, 80) || fallback;
+}
+
+function outputFilenameForIndex(index) {
+  const stem = safeStem(baseNameInput.value, "product");
+  return `${stem}_${String(index).padStart(3, "0")}.png`;
+}
+
+function loadImage(source) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    let objectUrl = "";
+    image.onload = () => {
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      resolve(image);
+    };
+    image.onerror = () => {
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      reject(new Error("图片读取失败"));
+    };
+    if (source instanceof Blob) {
+      objectUrl = URL.createObjectURL(source);
+      image.src = objectUrl;
+    } else {
+      image.src = source;
+    }
+  });
+}
+
+async function loadTemplateImageForLocal() {
+  const id = templateSelect.value || "default";
+  return loadImage(`/api/templates/${encodeURIComponent(id)}/preview?ts=${Date.now()}`);
+}
+
+async function canvasToPngDataUrl(canvas) {
+  return new Promise((resolve) => {
+    canvas.toBlob((blob) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.readAsDataURL(blob);
+    }, "image/png");
+  });
+}
+
+async function processLocalImage(file, index, width, height, templateImage) {
+  const productImage = await loadImage(file);
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+
+  const context = canvas.getContext("2d");
+  context.fillStyle = backgroundColorInput.value || "#ffffff";
+  context.fillRect(0, 0, width, height);
+
+  const areaWidth = Math.max(1, Math.round(width * PRODUCT_AREA_RATIO));
+  const areaHeight = Math.max(1, Math.round(height * PRODUCT_AREA_RATIO));
+  const scale = Math.min(areaWidth / productImage.naturalWidth, areaHeight / productImage.naturalHeight);
+  const drawWidth = Math.round(productImage.naturalWidth * scale);
+  const drawHeight = Math.round(productImage.naturalHeight * scale);
+  const productX = Math.round((width - drawWidth) / 2);
+  const productY = Math.round((height - drawHeight) / 2);
+
+  context.drawImage(productImage, productX, productY, drawWidth, drawHeight);
+  context.drawImage(templateImage, 0, 0, width, height);
+
+  return {
+    filename: outputFilenameForIndex(index),
+    data_url: await canvasToPngDataUrl(canvas),
+  };
+}
+
+async function processServerImage(file, index, width, height) {
+  const response = await fetch("/api/process-one", {
+    method: "POST",
+    body: buildSingleProcessFormData(file, index, width, height),
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.detail || `第 ${index} 张处理失败`);
+  }
+  return data.preview;
+}
+
 function renderResultPreviews(previews) {
   previewGrid.className = "preview-grid";
   previewGrid.innerHTML = "";
@@ -372,6 +467,7 @@ function disableDownload() {
 async function processImages() {
   try {
     const { files, width, height } = validateForm();
+    const processMode = getProcessMode();
     processBtn.disabled = true;
     disableDownload();
     showProgress(files.length);
@@ -380,34 +476,42 @@ async function processImages() {
     setStatus(`正在生成 0 / ${files.length}`);
 
     const previews = new Array(files.length);
+    const templateImage = processMode === "server" ? null : await loadTemplateImageForLocal();
     let nextIndex = 0;
     let completed = 0;
 
-    async function runWorker() {
+    async function runWorker(workerType) {
       while (nextIndex < files.length) {
         const offset = nextIndex;
         nextIndex += 1;
         const current = offset + 1;
-        updateProgress(completed, files.length, files[offset].name);
+        const label = workerType === "local" ? "本机" : "服务器";
+        updateProgress(completed, files.length, `${label}：${files[offset].name}`);
         setStatus(`正在生成 ${completed} / ${files.length}`);
 
-        const response = await fetch("/api/process-one", {
-          method: "POST",
-          body: buildSingleProcessFormData(files[offset], current, width, height),
-        });
-        const data = await response.json();
-        if (!response.ok) {
-          throw new Error(data.detail || `第 ${current} 张处理失败`);
-        }
-        previews[offset] = data.preview;
+        previews[offset] = workerType === "local"
+          ? await processLocalImage(files[offset], current, width, height, templateImage)
+          : await processServerImage(files[offset], current, width, height);
         completed += 1;
-        updateProgress(completed, files.length, files[offset].name);
+        updateProgress(completed, files.length, `${label}：${files[offset].name}`);
         setStatus(`正在生成 ${completed} / ${files.length}`);
       }
     }
 
-    const workerCount = Math.min(PROCESS_CONCURRENCY, files.length);
-    await Promise.all(Array.from({ length: workerCount }, () => runWorker()));
+    const workers = [];
+    if (processMode === "local") {
+      const localCount = Math.min(2, files.length);
+      workers.push(...Array.from({ length: localCount }, () => runWorker("local")));
+    } else if (processMode === "server") {
+      const serverCount = Math.min(PROCESS_CONCURRENCY, files.length);
+      workers.push(...Array.from({ length: serverCount }, () => runWorker("server")));
+    } else {
+      const localCount = Math.min(1, files.length);
+      const serverCount = Math.min(2, Math.max(files.length - localCount, 0));
+      workers.push(...Array.from({ length: localCount }, () => runWorker("local")));
+      workers.push(...Array.from({ length: serverCount }, () => runWorker("server")));
+    }
+    await Promise.all(workers);
 
     generatedPreviews = previews;
     renderResultPreviews(previews);

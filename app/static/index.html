@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>SayHi 图片融合工具</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260524-ui5" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260524-ui6" />
   </head>
   <body>
     <main class="app-shell">
@@ -14,7 +14,23 @@
           <h1>图片模板融合</h1>
           <p class="topbar-subtitle">批量上传商品图，选择模板和背景色，一次生成可下载的 PNG 压缩包。</p>
         </div>
-        <button id="processBtn" class="primary-button" type="button">开始处理</button>
+        <div class="topbar-actions">
+          <div class="process-mode" role="radiogroup" aria-label="处理方式">
+            <label>
+              <input type="radio" name="processMode" value="local" checked />
+              <span>本机处理</span>
+            </label>
+            <label>
+              <input type="radio" name="processMode" value="server" />
+              <span>服务器处理</span>
+            </label>
+            <label>
+              <input type="radio" name="processMode" value="hybrid" />
+              <span>混合加速</span>
+            </label>
+          </div>
+          <button id="processBtn" class="primary-button" type="button">开始处理</button>
+        </div>
       </header>
 
       <section class="workspace" aria-label="图片处理工作区">
@@ -110,6 +126,6 @@
       </section>
     </main>
 
-    <script src="/static/app.js?v=20260524-ui5"></script>
+    <script src="/static/app.js?v=20260524-ui6"></script>
   </body>
 </html>

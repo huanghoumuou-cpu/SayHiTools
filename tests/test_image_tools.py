@@ -31,7 +31,57 @@ def client(tmp_path, monkeypatch):
     templates_dir.mkdir()
     (templates_dir / "default.png").write_bytes(make_template())
     monkeypatch.setattr("app.main.TEMPLATES_DIR", templates_dir)
+    monkeypatch.setenv("SAYHI_ADMIN_USERNAME", "admin")
+    monkeypatch.setenv("SAYHI_ADMIN_PASSWORD", "secret")
+    monkeypatch.setenv("SAYHI_SESSION_SECRET", "test-session-secret")
+    monkeypatch.setenv("SAYHI_COOKIE_SECURE", "false")
+    test_client = TestClient(app)
+    response = test_client.post("/api/login", data={"username": "admin", "password": "secret"})
+    assert response.status_code == 200
+    return test_client
+
+
+@pytest.fixture()
+def unauthenticated_client(tmp_path, monkeypatch):
+    templates_dir = tmp_path / "templates"
+    templates_dir.mkdir()
+    (templates_dir / "default.png").write_bytes(make_template())
+    monkeypatch.setattr("app.main.TEMPLATES_DIR", templates_dir)
+    monkeypatch.setenv("SAYHI_ADMIN_USERNAME", "admin")
+    monkeypatch.setenv("SAYHI_ADMIN_PASSWORD", "secret")
+    monkeypatch.setenv("SAYHI_SESSION_SECRET", "test-session-secret")
+    monkeypatch.setenv("SAYHI_COOKIE_SECURE", "false")
     return TestClient(app)
+
+
+def test_index_redirects_to_login_when_not_authenticated(unauthenticated_client):
+    response = unauthenticated_client.get("/", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/login"
+
+
+def test_api_requires_login(unauthenticated_client):
+    response = unauthenticated_client.get("/api/templates")
+
+    assert response.status_code == 401
+
+
+def test_login_rejects_wrong_password(unauthenticated_client):
+    response = unauthenticated_client.post("/api/login", data={"username": "admin", "password": "wrong"})
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "用户名或密码错误"
+
+
+def test_login_sets_session_cookie_and_allows_access(unauthenticated_client):
+    login_response = unauthenticated_client.post("/api/login", data={"username": "admin", "password": "secret"})
+    index_response = unauthenticated_client.get("/", follow_redirects=False)
+
+    assert login_response.status_code == 200
+    assert "sayhi_session" in login_response.headers["set-cookie"]
+    assert "Max-Age=604800" in login_response.headers["set-cookie"]
+    assert index_response.status_code == 200
 
 
 def test_process_single_image_returns_zip(client):

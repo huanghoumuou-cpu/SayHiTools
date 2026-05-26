@@ -20,6 +20,8 @@ SayHiTools 是一个面向商品主图批量处理的图片模板融合工具。
 - 支持批量处理进度提示，展示当前处理第几张、总共多少张。
 - 支持三种处理方式：本机处理、服务器处理、混合加速。
 - 支持浏览器端打包 ZIP 下载，避免下载时重复处理图片。
+- 支持无数据库单管理员登录，登录状态在同一浏览器保留 7 天。
+- 前端包含轻量动效：页面进入、面板错落、结果卡片 reveal 和交互反馈。
 
 ## 图片合成规则
 
@@ -55,6 +57,7 @@ Web 版支持在“开始处理”按钮旁边选择处理方式：
 - 后端：Python、FastAPI、Pillow
 - 前端：HTML、CSS、原生 JavaScript
 - 图片处理：Pillow 后端处理，Canvas 离线版处理
+- 登录保护：HMAC 签名 HttpOnly Cookie
 - 部署：Docker、docker-compose、Nginx 反向代理
 
 ## 项目结构
@@ -63,6 +66,7 @@ Web 版支持在“开始处理”按钮旁边选择处理方式：
 .
 ├── app/
 │   ├── main.py                 # FastAPI 入口与 API 路由
+│   ├── auth.py                 # 单管理员登录与签名 Cookie
 │   ├── image_tools.py          # 图片合成核心逻辑
 │   ├── assets/
 │   │   └── default-template.png
@@ -106,6 +110,24 @@ pip install -r requirements.txt
 
 ### 2. 启动服务
 
+先配置管理员账号。Windows PowerShell：
+
+```powershell
+$env:SAYHI_ADMIN_USERNAME="admin"
+$env:SAYHI_ADMIN_PASSWORD="your-password"
+$env:SAYHI_SESSION_SECRET="replace-with-a-long-random-secret"
+$env:SAYHI_COOKIE_SECURE="false"
+```
+
+macOS / Linux：
+
+```bash
+export SAYHI_ADMIN_USERNAME=admin
+export SAYHI_ADMIN_PASSWORD=your-password
+export SAYHI_SESSION_SECRET=replace-with-a-long-random-secret
+export SAYHI_COOKIE_SECURE=false
+```
+
 ```bash
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
@@ -117,6 +139,18 @@ http://127.0.0.1:8000
 ```
 
 ## Docker 部署
+
+复制环境变量模板并修改真实值：
+
+```bash
+cp .env.example .env
+```
+
+生产环境建议：
+
+- `SAYHI_ADMIN_PASSWORD` 使用强密码。
+- `SAYHI_SESSION_SECRET` 使用长随机字符串。
+- HTTPS 域名访问时将 `SAYHI_COOKIE_SECURE=true`。
 
 ### 1. 构建并启动
 
@@ -147,10 +181,11 @@ docker ps
 ### 3. 本机验证
 
 ```bash
-curl http://127.0.0.1:8000/ | head
+curl -I http://127.0.0.1:8000/
+curl http://127.0.0.1:8000/login | head
 ```
 
-如果返回 HTML 内容，说明服务已经启动成功。
+未登录访问 `/` 会返回跳转到 `/login`，登录页能返回 HTML 内容即说明服务已经启动成功。
 
 ## 服务器更新流程
 
@@ -215,6 +250,24 @@ HTTPS 可以使用 Certbot 配置：
 certbot --nginx -d sayhi.example.com
 ```
 
+## 登录保护
+
+Web 服务版默认需要登录后使用。登录状态保存在浏览器的 `HttpOnly Cookie` 中，有效期 7 天。
+
+- 不使用数据库、Redis 或 IP 绑定。
+- 只有一个管理员账号。
+- 支持多个设备同时登录。
+- 每个浏览器独立保存登录状态。
+- 新设备登录不会让旧设备下线。
+- 清除 Cookie、换浏览器、换设备或超过 7 天后需要重新登录。
+
+登录相关接口：
+
+- `GET /login`：登录页面
+- `POST /api/login`：管理员登录
+- `POST /api/logout`：退出登录
+- `GET /api/session`：查询当前登录状态
+
 ## 离线 HTML 版
 
 `standalone.html` 是离线单文件版，可以直接发给别人使用：
@@ -233,9 +286,11 @@ python scripts/build_standalone.py
 
 ## API 说明
 
+除 `/api/login` 和 `/api/session` 外，Web 版 API 均需要登录 Cookie。
+
 ### `GET /`
 
-返回 Web 工具页面。
+已登录时返回 Web 工具页面，未登录时跳转到 `/login`。
 
 ### `GET /api/templates`
 

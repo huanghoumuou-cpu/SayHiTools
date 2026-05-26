@@ -4,11 +4,11 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>SayHi 图片融合工具</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260524-ui7" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260526-auth1" />
   </head>
   <body>
     <main class="app-shell">
-      <header class="topbar">
+      <header class="topbar" data-motion>
         <div>
           <p class="eyebrow">SayHi Tool</p>
           <h1>图片模板融合</h1>
@@ -31,11 +31,12 @@
           </div>
           <p class="process-mode-note">除非你的 CPU 比服务器的还垃圾，那么选择默认的本机处理就是最快的选择</p>
           <button id="processBtn" class="primary-button" type="button">开始处理</button>
+          <button id="logoutButton" class="secondary-button logout-button" type="button">退出</button>
         </div>
       </header>
 
       <section class="workspace" aria-label="图片处理工作区">
-        <form id="toolForm" class="panel upload-panel">
+        <form id="toolForm" class="panel upload-panel" data-motion data-motion-delay="80">
           <div class="panel-head panel-head-with-action">
             <span class="step">1</span>
             <div>
@@ -54,7 +55,7 @@
           <div id="fileList" class="file-list" aria-live="polite"></div>
         </form>
 
-        <section class="panel settings-panel">
+        <section class="panel settings-panel" data-motion data-motion-delay="160">
           <div class="panel-head">
             <span class="step">2</span>
             <div>
@@ -99,7 +100,7 @@
           </label>
         </section>
 
-        <section class="panel result-panel">
+        <section class="panel result-panel" data-motion data-motion-delay="240">
           <div class="panel-head result-head">
             <span class="step">3</span>
             <div>
@@ -127,6 +128,6 @@
       </section>
     </main>
 
-    <script src="/static/app.js?v=20260524-ui7"></script>
+    <script src="/static/app.js?v=20260526-auth1"></script>
   </body>
 </html>

@@ -19,15 +19,57 @@ const progressBar = document.querySelector("#progressBar");
 const previewGrid = document.querySelector("#previewGrid");
 const downloadLink = document.querySelector("#downloadLink");
 const processModeInputs = Array.from(document.querySelectorAll('input[name="processMode"]'));
+const logoutButton = document.querySelector("#logoutButton");
 
 let selectedProductFiles = [];
 let generatedPreviews = [];
+let motionObserver = null;
 const PROCESS_CONCURRENCY = 3;
 const PRODUCT_AREA_RATIO = 0.75;
 const CRC_TABLE = buildCrcTable();
 
 function setStatus(message) {
   statusText.textContent = message;
+}
+
+function prefersReducedMotion() {
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+function revealElement(element, index = 0) {
+  if (prefersReducedMotion()) {
+    element.classList.add("motion-in");
+    return;
+  }
+  const delay = Number(element.dataset.motionDelay || Math.min(index * 70, 360));
+  element.style.transitionDelay = `${delay}ms`;
+  if (motionObserver) {
+    motionObserver.observe(element);
+  } else {
+    window.setTimeout(() => element.classList.add("motion-in"), delay);
+  }
+}
+
+function initMotion() {
+  if (prefersReducedMotion()) return;
+  document.body.classList.add("motion-ready");
+  motionObserver = new IntersectionObserver(
+    (entries) => {
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting) return;
+        entry.target.classList.add("motion-in");
+        motionObserver.unobserve(entry.target);
+      });
+    },
+    { threshold: 0.14, rootMargin: "0px 0px -8% 0px" },
+  );
+  requestAnimationFrame(() => {
+    document.querySelectorAll("[data-motion]").forEach((element, index) => revealElement(element, index));
+  });
+}
+
+function revealPreviewItems() {
+  previewGrid.querySelectorAll(".preview-item").forEach((element, index) => revealElement(element, index));
 }
 
 function formatSize(bytes) {
@@ -318,6 +360,7 @@ function renderResultPreviews(previews) {
     item.append(image, input);
     previewGrid.appendChild(item);
   });
+  revealPreviewItems();
 }
 
 function getEditedOutputNames() {
@@ -559,12 +602,21 @@ async function downloadEditedZip(event) {
   }
 }
 
+async function logout() {
+  try {
+    await fetch("/api/logout", { method: "POST" });
+  } finally {
+    window.location.href = "/login";
+  }
+}
+
 productsInput.addEventListener("change", updateFileList);
 clearProductsButton.addEventListener("click", clearProducts);
 templateSelect.addEventListener("change", updateTemplatePreview);
 templateInput.addEventListener("change", () => uploadTemplate().catch((error) => setStatus(error.message)));
 processBtn.addEventListener("click", processImages);
 downloadLink.addEventListener("click", downloadEditedZip);
+logoutButton.addEventListener("click", logout);
 
 dropzone.addEventListener("dragover", (event) => {
   event.preventDefault();
@@ -584,4 +636,5 @@ dropzone.addEventListener("drop", (event) => {
   }
 });
 
+initMotion();
 loadTemplates().catch((error) => setStatus(error.message));

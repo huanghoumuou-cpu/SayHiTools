@@ -7,10 +7,17 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
+from .auth import (
+    clear_session_cookie,
+    get_session_from_request,
+    require_auth,
+    set_session_cookie,
+    verify_admin_credentials,
+)
 from .image_tools import (
     build_result_zip,
     build_single_preview,
@@ -39,18 +46,50 @@ app = FastAPI(title="SayHi 图片模板融合工具", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
-@app.get("/")
-def index() -> FileResponse:
+@app.get("/", response_model=None)
+def index(request: Request) -> FileResponse | RedirectResponse:
+    if get_session_from_request(request) is None:
+        return RedirectResponse(url="/login", status_code=303)
     return FileResponse(STATIC_DIR / "index.html")
 
 
+@app.get("/login", response_model=None)
+def login_page(request: Request) -> FileResponse | RedirectResponse:
+    if get_session_from_request(request) is not None:
+        return RedirectResponse(url="/", status_code=303)
+    return FileResponse(STATIC_DIR / "login.html")
+
+
+@app.post("/api/login")
+async def api_login(
+    response: Response,
+    username: Annotated[str, Form()],
+    password: Annotated[str, Form()],
+) -> dict[str, object]:
+    config = verify_admin_credentials(username, password)
+    set_session_cookie(response, config)
+    return {"authenticated": True}
+
+
+@app.post("/api/logout")
+async def api_logout(response: Response) -> dict[str, object]:
+    clear_session_cookie(response)
+    return {"authenticated": False}
+
+
+@app.get("/api/session")
+def api_session(request: Request) -> dict[str, object]:
+    session = get_session_from_request(request)
+    return {"authenticated": session is not None, "username": session.username if session else None}
+
+
 @app.get("/api/templates")
-def api_templates() -> dict[str, list[dict[str, object]]]:
+def api_templates(_: Annotated[object, Depends(require_auth)]) -> dict[str, list[dict[str, object]]]:
     return {"templates": [template.__dict__ for template in list_templates(TEMPLATES_DIR)]}
 
 
 @app.get("/api/templates/{template_id}/preview")
-def api_template_preview(template_id: str) -> FileResponse:
+def api_template_preview(template_id: str, _: Annotated[object, Depends(require_auth)]) -> FileResponse:
     path = resolve_template_path(TEMPLATES_DIR, template_id)
     return FileResponse(path, media_type="image/png")
 
@@ -58,6 +97,7 @@ def api_template_preview(template_id: str) -> FileResponse:
 @app.post("/api/templates")
 async def api_upload_template(
     template: Annotated[UploadFile, File(description="PNG 模板图片")],
+    _: Annotated[object, Depends(require_auth)],
 ) -> dict[str, object]:
     info = await save_uploaded_template(TEMPLATES_DIR, template)
     return {"template": info.__dict__}
@@ -72,6 +112,7 @@ async def api_process_one(
     base_name: Annotated[str, Form()] = "product",
     index: Annotated[int, Form()] = 1,
     background_color: Annotated[str, Form()] = "#ffffff",
+    _: Annotated[object, Depends(require_auth)] = None,
 ) -> dict[str, object]:
     template_path = resolve_template_path(TEMPLATES_DIR, template_id)
     preview = await build_single_preview(
@@ -96,6 +137,7 @@ async def api_process(
     background_color: Annotated[str, Form()] = "#ffffff",
     output_names: Annotated[str | None, Form()] = None,
     preview: Annotated[bool, Form()] = False,
+    _: Annotated[object, Depends(require_auth)] = None,
 ):
     parsed_output_names = None
     if output_names:

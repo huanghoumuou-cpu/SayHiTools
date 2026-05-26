@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>登录 - SayHi 图片融合工具</title>
+    <link rel="stylesheet" href="/static/styles.css?v=20260526-auth1" />
+  </head>
+  <body class="login-page">
+    <main class="login-shell">
+      <section class="login-card" data-motion>
+        <p class="eyebrow">SayHi Tool</p>
+        <h1>管理员登录</h1>
+        <p class="login-copy">登录后可在当前浏览器保持 7 天有效。</p>
+
+        <form id="loginForm" class="login-form">
+          <label class="field">
+            <span>账号</span>
+            <input id="usernameInput" name="username" type="text" autocomplete="username" required />
+          </label>
+
+          <label class="field">
+            <span>密码</span>
+            <input id="passwordInput" name="password" type="password" autocomplete="current-password" required />
+          </label>
+
+          <p id="loginError" class="login-error" role="alert" aria-live="polite"></p>
+          <button id="loginButton" class="primary-button login-button" type="submit">登录</button>
+        </form>
+      </section>
+    </main>
+
+    <script>
+      const loginForm = document.querySelector("#loginForm");
+      const loginButton = document.querySelector("#loginButton");
+      const loginError = document.querySelector("#loginError");
+
+      function initLoginMotion() {
+        if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+        document.body.classList.add("motion-ready");
+        requestAnimationFrame(() => {
+          document.querySelectorAll("[data-motion]").forEach((element) => {
+            element.classList.add("motion-in");
+          });
+        });
+      }
+
+      loginForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        loginError.textContent = "";
+        loginButton.disabled = true;
+        loginButton.textContent = "登录中";
+
+        try {
+          const response = await fetch("/api/login", {
+            method: "POST",
+            body: new FormData(loginForm),
+          });
+          const data = await response.json();
+          if (!response.ok) {
+            throw new Error(data.detail || "登录失败");
+          }
+          window.location.href = "/";
+        } catch (error) {
+          loginError.textContent = error.message;
+        } finally {
+          loginButton.disabled = false;
+          loginButton.textContent = "登录";
+        }
+      });
+
+      initLoginMotion();
+    </script>
+  </body>
+</html>

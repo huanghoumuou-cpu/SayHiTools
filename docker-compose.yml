@@ -4,7 +4,11 @@ services:
     container_name: sayhi-image-tool
     ports:
       - "8000:8000"
+    environment:
+      SAYHI_ADMIN_USERNAME: ${SAYHI_ADMIN_USERNAME}
+      SAYHI_ADMIN_PASSWORD: ${SAYHI_ADMIN_PASSWORD}
+      SAYHI_SESSION_SECRET: ${SAYHI_SESSION_SECRET}
+      SAYHI_COOKIE_SECURE: ${SAYHI_COOKIE_SECURE:-false}
     volumes:
       - ./data:/app/data
     restart: unless-stopped
-
